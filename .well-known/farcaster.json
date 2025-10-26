@@ -6,10 +6,10 @@
   },
   "miniapp": {
     "version": "1",
-    "name": "base breaker", 
+    "name": "base breaker",
     "homeUrl": "https://base-breakers.vercel.app/",
-    "description": "Race the clock and your reflexes as you smash through glowing walls of Base energy in a nonstop chain breaking frenzy", 
-    "iconUrl": "https://postimg.cc/DWCqcygv/base-breaker-icon.png", 
-    "imageUrl": "https://postimg.cc/DWCqcygv/base-breaker-thumb.png" 
+    "description": "Race the clock and your reflexes as you smash through glowing walls of Base energy in a nonstop chain breaking frenzy",
+    "iconUrl": "https://i.postimg.cc/DWCqcygv/base-breaker-icon.png",
+    "imageUrl": "https://i.postimg.cc/4dGBsYH9/Screenshot-2025-10-26-044809.png"
   }
 }
