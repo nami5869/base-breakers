@@ -1,1 +1,15 @@
-
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjUzMTUyOCwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDZENjc0MzhlZTY0Njk2RGY2NDA2MDk1ZWU4MTNjMzA4MDIyRDZENDEifQ",
+    "payload": "eyJkb21haW4iOiJhc3Ryb3J1bm5lci52ZXJjZWwuYXBwIn0",
+    "signature": "0Vd5ii4NdIrU4c7nLU5qmdyIMevb6CQo6bvUvwxIMRZSjgk79cY5EDcELoZYwmHwIsadzp0JmW1G6xrQGnO+sBs="
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "base breaker", 
+    "homeUrl": "https://base-breakers.vercel.app/",
+    "description": "Race the clock and your reflexes as you smash through glowing walls of Base energy in a nonstop chain breaking frenzy", 
+    "iconUrl": "https://postimg.cc/DWCqcygv/base-breaker-icon.png", 
+    "imageUrl": "https://postimg.cc/DWCqcygv/base-breaker-thumb.png" 
+  }
+}
