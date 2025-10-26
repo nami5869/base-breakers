@@ -65,14 +65,24 @@
   .frame{position:relative;border:0;border-radius:0;background:transparent}
   canvas#game{display:block;width:100vw;height:calc(100vh - 120px);border-radius:0}
 
-  /* Floating controls (Left / Right) */
-  #cornerControls{
-    position:fixed; right:14px; bottom:14px;
-    display:flex; flex-direction:column; gap:12px; z-index:40; pointer-events:auto;
+  /* Corner controls (two separate anchors) */
+  .cornerControl {
+    position: fixed;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 40;
+    pointer-events: auto;
   }
+  .cornerControl.left  { left:  max(12px, env(safe-area-inset-left)); }
+  .cornerControl.right { right: max(12px, env(safe-area-inset-right)); }
+
   .fab-btn{
-    width:68px; height:68px; border-radius:50%; border:none;
-    background:#8b5cf6; color:#fff; font-size:28px; font-weight:900;
+    width:56px; height:56px;
+    border-radius:50%;
+    border:none;
+    background:#8b5cf6;
+    color:#fff;
+    font-size:22px;
+    font-weight:900;
     box-shadow:0 8px 24px rgba(139,92,246,.35), inset 0 0 0 2px rgba(255,255,255,.12);
     cursor:pointer; user-select:none;
   }
@@ -82,7 +92,6 @@
   dialog{border:none;border-radius:16px;background:#0b1220;color:#fff;padding:22px;max-width:min(92vw,420px)}
   dialog::backdrop{background:rgba(0,0,0,.6)}
 
-  /* Brick look */
   .legend{opacity:.9;font-size:.9rem;color:#cbd5e1}
 </style>
 </head>
@@ -121,7 +130,7 @@
   <section id="intro" aria-labelledby="title" style="display:none;">
     <h1 id="title">🟦 BASE BREAKER</h1>
     <p class="lead">
-      Break all the $ bricks! Move with ← →, launch with Space. On mobile, tap the ◀ ▶ buttons.
+      Break the $ bricks! Move with ← →, launch with Space, or tap the ball to launch on mobile.
       You’ll be asked to pay a small Base fee to start.
     </p>
     <div class="row">
@@ -144,10 +153,12 @@
   </section>
 </div>
 
-<!-- Floating Left/Right controls -->
-<div id="cornerControls" aria-label="On-screen controls">
-  <button class="fab-btn" id="leftBtn"  aria-label="Move left"><span>◀</span></button>
-  <button class="fab-btn" id="rightBtn" aria-label="Move right"><span>▶</span></button>
+<!-- Floating controls -->
+<div class="cornerControl left" aria-label="Move left">
+  <button class="fab-btn" id="leftBtn"><span>◀</span></button>
+</div>
+<div class="cornerControl right" aria-label="Move right">
+  <button class="fab-btn" id="rightBtn"><span>▶</span></button>
 </div>
 
 <dialog id="over">
@@ -189,16 +200,20 @@ function initCanvas(){
   cvs.focus();
   buildLevel();
   reset(true);
+
+  // tap/click to launch on mobile
+  cvs.addEventListener('pointerdown', ()=>{
+    if(ball.stuck){ keys.add('Space'); setTimeout(()=>keys.delete('Space'), 80); }
+  });
 }
 
 function reset(justPlace=false){
   score=0; over=false; t=0;
-  paddle.w=Math.max(90, Math.min(160, W*0.18));
-  paddle.h=16; paddle.y = H-70; paddle.x = (W-paddle.w)/2;
+  paddle.w=Math.max(100, Math.min(180, W*0.22));
+  paddle.h=16; paddle.y = H-84; paddle.x = (W-paddle.w)/2;
 
   ball.r=10; ball.stuck=true;
   ball.x=paddle.x+paddle.w/2; ball.y=paddle.y-ball.r-2;
-  // random initial direction on launch
   ball.vx=rand(-1,1); ball.vy=-1;
 
   if(!justPlace){for(const b of bricks) b.alive=true;}
@@ -206,13 +221,13 @@ function reset(justPlace=false){
 
 function buildLevel(){
   bricks.length=0;
-  const rows=5, cols=7;
+  const rows=6, cols=8;
   const gutter=10;
-  const totalW = Math.min(W*0.9, 560);
+  const totalW = Math.min(W*0.92, 640);
   const brickW = Math.floor((totalW - gutter*(cols-1)) / cols);
   const brickH = 28;
   const offX = (W-totalW)/2;
-  const offY = 100;
+  const offY = 90;
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
       bricks.push({
@@ -233,6 +248,7 @@ function startLoop(){
   document.getElementById('stage').style.display='block';
   cancelAnimationFrame(raf); last=performance.now(); raf=requestAnimationFrame(update);
 }
+window.startLoop = startLoop; // exposed for module script
 
 function update(time){
   dt=(time-last)/1000||0; last=time;
@@ -249,8 +265,9 @@ function update(time){
     ball.y = paddle.y - ball.r - 2;
     if(inp.launch){
       const angle = rand(-0.6, -2.2); // upward-ish
-      ball.vx = Math.cos(angle)*ball.speed;
-      ball.vy = Math.sin(angle)*ball.speed;
+      const sp = ball.speed;
+      ball.vx = Math.cos(angle)*sp;
+      ball.vy = Math.sin(angle)*sp;
       ball.stuck=false;
     }
   }else{
@@ -267,16 +284,15 @@ function update(time){
       const hit = (ball.x - (paddle.x+paddle.w/2)) / (paddle.w/2); // -1..1
       const angle = (Math.PI*0.8) * (0.5 - 0.5*hit); // fan out
       const speed = Math.min(640, Math.hypot(ball.vx,ball.vy)*1.03);
-      ball.vx = Math.cos(angle) * speed * (hit>=0?-1:1) * -1; // steer
+      ball.vx = Math.cos(angle) * speed * (hit>=0?-1:1) * -1;
       ball.vy = -Math.abs(Math.sin(angle) * speed);
-      score += 1; // tiny reward for rallies
+      score += 1;
     }
 
-    // brick collisions (AABB)
+    // brick collisions
     for(const b of bricks){
       if(!b.alive) continue;
       if(ball.x+ball.r<b.x || ball.x-ball.r>b.x+b.w || ball.y+ball.r<b.y || ball.y-ball.r>b.y+b.h) continue;
-      // resolve by deciding which side penetrated least
       const left   = Math.abs((ball.x+ball.r) - b.x);
       const right  = Math.abs((b.x+b.w) - (ball.x-ball.r));
       const top    = Math.abs((ball.y+ball.r) - b.y);
@@ -320,9 +336,17 @@ function draw(){
     drawBrick(b.x,b.y,b.w,b.h);
   }
 
-  // paddle
-  ctx.fillStyle='#94a3b8';
+  // paddle (board) — visible & glowy
+  ctx.save();
+  ctx.shadowColor='rgba(148,163,184,.45)';
+  ctx.shadowBlur=10; ctx.shadowOffsetY=2;
+  ctx.fillStyle='#a5b4fc';
   roundRect(paddle.x,paddle.y,paddle.w,paddle.h,10,true);
+  ctx.shadowColor='transparent';
+  ctx.strokeStyle='rgba(255,255,255,.18)';
+  ctx.lineWidth=2;
+  roundRect(paddle.x+2,paddle.y+2,paddle.w-4,paddle.h-4,9,false,true);
+  ctx.restore();
 
   // ball
   const r=ball.r;
@@ -336,18 +360,13 @@ function draw(){
 }
 
 function drawBrick(x,y,w,h){
-  // purple brick with $ glyph
   ctx.save();
-  // shadow
   ctx.shadowColor='rgba(99,102,241,.45)'; ctx.shadowBlur=10; ctx.shadowOffsetY=2;
   ctx.fillStyle='#6366f1';
   roundRect(x,y,w,h,8,true);
-  // inner highlight
   ctx.shadowColor='transparent';
   ctx.strokeStyle='rgba(255,255,255,.18)';
   ctx.lineWidth=2; roundRect(x+2,y+2,w-4,h-4,7,false,true);
-
-  // $ sign
   ctx.fillStyle='#eaeaff';
   ctx.font = `${Math.floor(h*0.7)}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial`;
   ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -416,7 +435,6 @@ function resizeCanvas(){
   cvs.style.width = W + 'px';
   cvs.style.height = H + 'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  // keep paddle & bricks responsive
   buildLevel();
   reset(true);
 }
@@ -439,6 +457,7 @@ function showLeaderboard(){
   list.innerHTML = lb.length ? lb.map((e,i)=>`<li>#${i+1} ${e.name} — ${e.score}</li>`).join('') : '<li>No scores yet.</li>';
   document.getElementById('board').showModal();
 }
+window.showLeaderboard = showLeaderboard;
 </script>
 
 <!-- ===== FARCASTER MINIAPP PAYMENT (Base) + Dashboard wiring ===== -->
@@ -517,6 +536,8 @@ function showLeaderboard(){
     }
   }
 
+  function explorerBaseOf(chain){ return (chain.blockExplorerUrls && chain.blockExplorerUrls[0]) || ''; }
+
   async function requiredPayment(){
     statusEl.innerHTML='<b>Connecting wallet…</b>';
     const provider = await getProvider();
@@ -531,8 +552,8 @@ function showLeaderboard(){
       method:'eth_sendTransaction',
       params:[{ from, to:RECIPIENT, value:parseEther(AMOUNT_ETH) }]
     });
-    const explorerBase = (TARGET.blockExplorerUrls && TARGET.blockExplorerUrls[0]) || '';
-    statusEl.innerHTML += `<div class="ok">TX sent! ${explorerBase ? `<a target="_blank" href="${explorerBase}/tx/${hash}">View TX</a>` : ''}</div>`;
+    const ex = explorerBaseOf(TARGET);
+    statusEl.innerHTML += `<div class="ok">TX sent! ${ex ? `<a target="_blank" href="${ex}/tx/${hash}">View TX</a>` : ''}</div>`;
     return hash;
   }
 
@@ -541,7 +562,6 @@ function showLeaderboard(){
     document.getElementById('hud').style.display='flex';
     document.getElementById('stage').style.display='block';
     document.getElementById('best').textContent='Best: '+(Number(localStorage.getItem('basebreakerBest')||0));
-    // call startLoop in the non-module script
     window.startLoop?.();
   }
 
