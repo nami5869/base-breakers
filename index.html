@@ -1,185 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🔵 Base Breaker — Preview</title>
+<style>
+  :root{--maxPhoneW:420px; --brand:#3B82F6; --panel:#0b1220; --fg:#eaf4ff; --muted:#9fb0c3}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%,#121a2d 0,#070a12 60%); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; text-align:center; }
+  a{color:#66ccff;text-decoration:none}
+
+  /* ===== Dashboard ===== */
+  #dashboard{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(1000px 600px at 50% -10%, #121a2d 0, #070a12 70%); z-index:50}
+  .dash-card{background:var(--panel); border-radius:20px; padding:24px 30px; width:min(92vw, 440px); box-shadow:0 0 28px rgba(59,130,246,0.25); text-align:center}
+  .dash-title{color:var(--brand);font-size:2rem;margin:0 0 8px}
+  .dash-user{opacity:.95;margin-bottom:10px}
+  .dash-stats{display:flex;justify-content:center;gap:12px;margin:12px 0 16px}
+  .dash-stat{background:rgba(59,130,246,.08); border:1px solid rgba(59,130,246,.35); border-radius:12px; padding:10px 16px; min-width:92px}
+  .dash-stat .v{color:var(--brand);font-weight:800;font-size:1.1rem}
+  .dash-stat .k{color:var(--muted);font-size:.8rem}
+  .dash-buttons{display:flex;justify-content:center;gap:10px;margin-top:6px}
+  .btn{background:var(--brand);color:#111;border:none;border-radius:14px;padding:12px 20px;font-weight:800;cursor:pointer}
+  .btn[disabled]{opacity:.6;cursor:not-allowed}
+  #status{margin-top:10px;color:var(--muted);min-height:20px}
+
+  /* ===== HUD & Stage ===== */
+  #hud{display:none;gap:12px;align-items:center;justify-content:center;padding:10px}
+  .chip{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35);color:var(--brand);border-radius:999px;padding:8px 12px;font-weight:700}
+  .stage{display:grid;place-items:center;padding:10px 0 18px}
+  canvas{background:#0b1220;display:block;margin:0 auto;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+
+  dialog{border:none;border-radius:16px;background:#0b1220;color:#fff;padding:22px;max-width:min(92vw,420px)}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  #tests{font:12px/1.2 system-ui; color:#9fb0c3; margin-top:6px}
+</style>
+</head>
+<body>
+
+<!-- ===== Dashboard ===== -->
+<section id="dashboard">
+  <div class="dash-card">
+    <h2 class="dash-title">🔵 BASE BREAKER</h2>
+    <div class="dash-user" id="dashUser">@Player</div>
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="v" id="dashBest">0</div><div class="k">BEST</div></div>
+      <div class="dash-stat"><div class="v" id="dashGames">0</div><div class="k">GAMES</div></div>
+      <div class="dash-stat"><div class="v" id="dashLast">0</div><div class="k">LAST</div></div>
+    </div>
+    <div class="dash-buttons">
+      <button class="btn" id="dashStart">Play</button>
+      <button class="btn" id="dashLeaderboard">Leaderboard</button>
+    </div>
+    <div id="status">preview mode wallet disabled</div>
+  </div>
+</section>
+
+<!-- ===== HUD & Stage ===== -->
+<div id="hud">
+  <div class="chip" id="score">Score: 0</div>
+  <div class="chip" id="best">Best: 0</div>
+  <button class="btn" id="pause">Pause</button>
+  <button class="btn" id="showBoard">Leaderboard</button>
+  <div id="tests"></div>
+</div>
+<div class="stage">
+  <canvas id="game" width="360" height="640" aria-label="Base Breaker"></canvas>
+</div>
+
+<!-- Game Over -->
+<dialog id="over"><h3>Game Over</h3><p id="final">Score: 0</p><div style="display:flex;gap:8px;justify-content:center"><button class="btn" id="again">Play again</button></div></dialog>
+
+<!-- Leaderboard -->
+<dialog id="board"><h3>Base Breaker Leaderboard</h3><ol id="boardList" style="text-align:left"></ol><div style="display:flex;gap:8px;justify-content:center;margin-top:10px"><button class="btn" id="closeBoard">Close</button></div></dialog>
+
 <script>
-(async () => {
-  // --- Safe status helper ---
-  const statusEl = document.getElementById('status');
-  const say = (msg) => { if (statusEl) statusEl.textContent = msg; };
+/********************
+ * Base Breaker — Working Preview (no wallet)
+ ********************/
+const cvs=document.getElementById('game');
+const ctx=cvs.getContext('2d');
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 
-  // Make sure the dashboard shows even if anything fails early
-  document.getElementById('dashboard')?.style.setProperty('display', 'flex');
+let W=cvs.width, H=cvs.height;
+let paddle={x:W/2-50,y:H-28,w:100,h:12};
+let ball={x:W/2,y:H-40,r:8,vx:4,vy:-4};
+let bricks=[]; let score=0; let playing=false;
 
-  // Try loading the SDK with multiple strategies
-  let sdk = null;
-  try {
-    // Preferred: ESM import
-    const m = await import('https://esm.sh/@farcaster/miniapp-sdk');
-    sdk = m?.sdk ?? null;
-  } catch (e) {
-    console.error('ESM import failed:', e);
-  }
+function sizeToPhone(){
+  const hudEl=document.getElementById('hud');
+  const hudH = hudEl && hudEl.style.display!=='none' ? hudEl.getBoundingClientRect().height : 0;
+  const availH = Math.max(240, window.innerHeight - hudH - 24);
+  const maxW = Math.min(window.innerWidth - 24, parseInt(getComputedStyle(document.documentElement).getPropertyValue('--maxPhoneW'))||420);
+  let targetW = Math.min(maxW, Math.floor(availH * 9 / 16));
+  let targetH = Math.floor(targetW * 16 / 9);
+  if(targetH > availH){ targetH = Math.floor(availH); targetW = Math.floor(targetH * 9 / 16); }
+  const dpr = window.devicePixelRatio || 1;
+  cvs.style.width = targetW + 'px';
+  cvs.style.height = targetH + 'px';
+  cvs.width = Math.max(1, Math.floor(targetW * dpr));
+  cvs.height = Math.max(1, Math.floor(targetH * dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  W = targetW; H = targetH; paddle.y = H - 28; paddle.x = clamp(paddle.x,0,W-paddle.w);
+}
+addEventListener('resize', sizeToPhone);
 
-  // Fallback: bundled UMD
-  if (!sdk) {
-    try {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://esm.sh/@farcaster/miniapp-sdk?bundle';
-        s.defer = true;
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-      // Some bundlers attach to window.sdk; if not, skip
-      sdk = window.sdk || null;
-    } catch (e) {
-      console.error('Bundle fallback failed:', e);
-    }
-  }
+function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function drawBackdrop(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0b1428');g.addColorStop(1,'#0a0f1f');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);} 
+function drawPaddle(){const x=paddle.x,y=paddle.y,w=paddle.w,h=paddle.h;const g=ctx.createLinearGradient(0,y,0,y+h);g.addColorStop(0,'#c7d2fe');g.addColorStop(1,'#93c5fd');ctx.fillStyle=g;rr(ctx,x,y,w,h,8);ctx.fill();}
+function drawBall(){const b=ball;ctx.save();ctx.shadowColor='rgba(147,197,253,0.9)';ctx.shadowBlur=10;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fillStyle='#ffffff';ctx.fill();ctx.restore();}
+function drawLogoBrick(ctx,x,y,w,h){const TILE='#6E4AFF';const r=Math.min(12,Math.min(w,h)*0.25);ctx.save();ctx.shadowColor='rgba(110,74,255,0.45)';ctx.shadowBlur=8;ctx.fillStyle=TILE;rr(ctx,x,y,w,h,r);ctx.fill();ctx.restore();ctx.fillStyle='#fff';const fs=Math.floor(h*0.75);ctx.font=`900 ${fs}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('$', x+w/2, y+h*0.56);} 
 
-  if (!sdk) {
-    say('Could not load Farcaster Mini App SDK.');
-    // Let the user play *without* the paywall so the app is never blank
-    // Remove payment gate by wiring Play to start immediately:
-    const btn = document.getElementById('dashStart');
-    if (btn) btn.onclick = () => {
-      document.getElementById('dashboard').style.display = 'none';
-      document.getElementById('hud').style.display = 'flex';
-      window.startLoop?.();
-    };
-    return;
-  }
+function initBricks(){
+  bricks=[]; const cols=8, rows=6, bw=60, bh=32, pad=10;
+  const totalW=cols*bw+(cols-1)*pad; const startX=Math.floor((W-totalW)/2); const startY=Math.max(24,60);
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ bricks.push({x:startX+c*(bw+pad), y:startY+r*(bh+pad), w:bw, h:bh, alive:true}); }
+}
 
-  // Ready signal (required)
-  try { sdk.actions.ready(); } catch {}
+function draw(){ ctx.imageSmoothingEnabled=false; drawBackdrop(); drawBall(); drawPaddle(); for(const b of bricks){ if(b.alive) drawLogoBrick(ctx,b.x,b.y,b.w,b.h);} }
+function update(){ if(!playing){ draw(); return; } ball.x+=ball.vx; ball.y+=ball.vy; if(ball.x<ball.r||ball.x>W-ball.r) ball.vx*=-1; if(ball.y<ball.r) ball.vy*=-1; if(ball.y>H){ endGame(); return; }
+  if(ball.x>paddle.x && ball.x<paddle.x+paddle.w && ball.y+ball.r>paddle.y){ ball.vy*=-1; ball.y=paddle.y-ball.r; }
+  for(const b of bricks){ if(b.alive && ball.x>b.x && ball.x<b.x+b.w && ball.y>b.y && ball.y<b.y+b.h){ ball.vy*=-1; b.alive=false; score+=10; document.getElementById('score').textContent='Score: '+score; break; } }
+  draw(); requestAnimationFrame(update); }
 
-  // ==== Your original wallet + payment wiring (guarded) ====
+addEventListener('mousemove',e=>{ const r=cvs.getBoundingClientRect(); const x=clamp(e.clientX-r.left,0,r.width); paddle.x=clamp(x-paddle.w/2,0,W-paddle.w); });
 
-  const RECIPIENT = '0x8C6e7978ee3324196ea7e478830fF9cD4AD7D507';
-  const AMOUNT_ETH = '0.00001';
-  const USE_BASE_SEPOLIA = false;
+document.getElementById('pause').addEventListener('click',()=>{ playing=!playing; document.getElementById('pause').textContent= playing ? 'Pause' : 'Resume'; if(playing) requestAnimationFrame(update); });
 
-  const BASE_MAINNET = {
-    chainId: '0x2105',
-    chainName: 'Base',
-    rpcUrls: ['https://mainnet.base.org'],
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    blockExplorerUrls: ['https://basescan.org']
-  };
-  const BASE_SEPOLIA = {
-    chainId: '0x14a34',
-    chainName: 'Base Sepolia',
-    rpcUrls: ['https://sepolia.base.org'],
-    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-    blockExplorerUrls: ['https://sepolia.basescan.org']
-  };
-  const TARGET = USE_BASE_SEPOLIA ? BASE_SEPOLIA : BASE_MAINNET;
+function getLeaderboard(){ return JSON.parse(localStorage.getItem('baseLeaderboard')||'[]'); }
+function setLeaderboard(lb){ localStorage.setItem('baseLeaderboard', JSON.stringify(lb.slice(0,10))); }
+function showLeaderboard(){ const lb=getLeaderboard(); const list=document.getElementById('boardList'); list.innerHTML = lb.length? lb.map((e,i)=>`<li>#${i+1} ${e.name} — ${e.score}</li>`).join('') : '<li>No scores yet.</li>'; document.getElementById('board').showModal(); }
+function addScoreToLeaderboard(name, s){ const lb=getLeaderboard(); lb.push({name, score:Number(s), ts:Date.now()}); lb.sort((a,b)=> b.score-a.score || a.ts-b.ts); setLeaderboard(lb); }
 
-  const dashBest = document.getElementById('dashBest');
-  const dashGames = document.getElementById('dashGames');
-  const dashLast = document.getElementById('dashLast');
+document.getElementById('showBoard').addEventListener('click',showLeaderboard); document.getElementById('closeBoard').addEventListener('click',()=>document.getElementById('board').close());
 
-  // Player name from Farcaster (optional)
-  window.__PLAYER_NAME__='@Player';
-  window.__WALLET_SHORT__='';
+function resetGame(){ score=0; document.getElementById('score').textContent='Score: 0'; initBricks(); ball.x=W/2; ball.y=H-40; ball.vx=4; ball.vy=-4; }
+function startLoop(){ document.getElementById('dashboard').style.display='none'; document.getElementById('hud').style.display='flex'; sizeToPhone(); resetGame(); playing=true; const best=Number(localStorage.getItem('baseBest')||0); document.getElementById('best').textContent='Best: '+best; requestAnimationFrame(update); }
+function endGame(){ playing=false; const s=Math.floor(score); const bestPrev=Number(localStorage.getItem('baseBest')||0); const best=Math.max(bestPrev,s); localStorage.setItem('baseBest',best); localStorage.setItem('baseLast',s); const games=(Number(localStorage.getItem('baseGames'))||0)+1; localStorage.setItem('baseGames',games); document.getElementById('best').textContent='Best: '+best; document.getElementById('final').textContent='Score: '+s; addScoreToLeaderboard('@Player', s); document.getElementById('over').showModal(); }
 
-  try {
-    const viewer = await sdk.viewer.getUser();
-    if (viewer?.username) {
-      window.__PLAYER_NAME__ = '@' + viewer.username;
-      const u = document.getElementById('dashUser');
-      if (u) u.textContent = window.__PLAYER_NAME__;
-    }
-  } catch (e) {
-    console.warn('viewer.getUser failed', e);
-  }
+document.getElementById('again').addEventListener('click',()=>{ document.getElementById('over').close(); startLoop(); });
 
-  function refreshDashboard(){
-    const best = Number(localStorage.getItem('baseBest')||localStorage.getItem('astroBest')||0);
-    const games = Number(localStorage.getItem('baseGames')||localStorage.getItem('astroGames')||0);
-    const last = Number(localStorage.getItem('baseLast')||localStorage.getItem('astroLast')||0);
-    if (dashBest) dashBest.textContent = best;
-    if (dashGames) dashGames.textContent = games;
-    if (dashLast) dashLast.textContent = last;
-  }
-  refreshDashboard();
+document.getElementById('dashStart').addEventListener('click',()=>{ startLoop(); });
+document.getElementById('dashLeaderboard').addEventListener('click',showLeaderboard);
 
-  function parseEther(x){
-    const [w,f='']=String(x).split('.');
-    const frac=(f+'0'.repeat(18)).slice(0,18);
-    return '0x'+(BigInt(w)*10n**18n+BigInt(frac)).toString(16);
-  }
+(function tests(){ const out=[]; const ok=(n,p)=>out.push(`${p?'✅':'❌'} ${n}`); ok('clamp floors', clamp(-5,0,10)===0); ok('clamp passthrough', clamp(5,0,10)===5); ok('clamp caps', clamp(15,0,10)===10); sizeToPhone(); initBricks(); ok('bricks created', bricks.length>0); ok('aspect ~9:16', Math.abs((H/W)-(16/9))<0.2); try{ ctx.clearRect(0,0,120,120); drawLogoBrick(ctx,30,30,60,60); ok('drawLogoBrick renders', true);}catch(e){ ok('render test', false);} document.getElementById('tests').textContent=out.join('  '); })();
 
-  async function getProvider(){
-    try { const p = await sdk.wallet.getEthereumProvider(); if (p) return p; } catch {}
-    return window.ethereum ?? null;
-  }
-
-  async function ensureChain(p, chain){
-    const current = (await p.request({method:'eth_chainId'}))?.toLowerCase();
-    if (current === chain.chainId.toLowerCase()) return;
-    try {
-      await p.request({ method:'wallet_switchEthereumChain', params:[{ chainId: chain.chainId }] });
-    } catch (e) {
-      if (e?.code === 4902) {
-        await p.request({ method:'wallet_addEthereumChain', params:[ chain ] });
-        await p.request({ method:'wallet_switchEthereumChain', params:[{ chainId: chain.chainId }] });
-      } else {
-        throw e;
-      }
-    }
-  }
-
-  async function requiredPayment(){
-    const statusEl = document.getElementById('status');
-    const say = (m) => { if (statusEl) statusEl.textContent = m; };
-    say('Connecting wallet…');
-
-    const provider = await getProvider();
-    if (!provider) { say('No wallet detected.'); throw new Error('NO_PROVIDER'); }
-
-    const [from] = await provider.request({method:'eth_requestAccounts'});
-    window.__WALLET_SHORT__ = from ? `${from.slice(0,6)}…${from.slice(-4)}` : '';
-
-    await ensureChain(provider, TARGET);
-
-    say(`Sending ${AMOUNT_ETH} ETH…`);
-    const hash = await provider.request({
-      method:'eth_sendTransaction',
-      params:[{ from, to:RECIPIENT, value:parseEther(AMOUNT_ETH) }]
-    });
-
-    const explorer = (TARGET.blockExplorerUrls && TARGET.blockExplorerUrls[0]) || '';
-    if (statusEl) statusEl.innerHTML = `TX sent! ${explorer ? `<a target="_blank" href="${explorer}/tx/${hash}">View TX</a>` : ''}`;
-    return hash;
-  }
-
-  function showGame(){
-    document.getElementById('dashboard').style.display='none';
-    document.getElementById('hud').style.display='flex';
-    window.startLoop?.();
-  }
-
-  async function payThenStart(btn){
-    try {
-      btn.disabled = true;
-      await requiredPayment();
-      const overDlg = document.getElementById('over');
-      if (overDlg && overDlg.open) overDlg.close();
-      showGame();
-    } catch (e) {
-      say('Payment cancelled or failed.');
-      console.error(e);
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  // Wire buttons
-  document.getElementById('dashStart')?.addEventListener('click', (e)=>{
-    e.preventDefault();
-    payThenStart(e.currentTarget);
-  });
-  document.getElementById('dashLeaderboard')?.addEventListener('click', ()=>{
-    window.showLeaderboard?.();
-  });
-})();
+sizeToPhone(); initBricks(); draw();
 </script>
+</body>
+</html>
