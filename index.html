@@ -1,69 +1,185 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>🔵 Base Breaker — Pay to Play</title>
-<style>
-  :root{--maxPhoneW:420px; --brand:#3B82F6; --panel:#0b1220; --fg:#eaf4ff; --muted:#9fb0c3}
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%,#121a2d 0,#070a12 60%); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; text-align:center; }
-  a{color:#66ccff;text-decoration:none}
-
-  #dashboard{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(1000px 600px at 50% -10%, #121a2d 0, #070a12 70%); z-index:50;}
-  .dash-card{background:var(--panel); border-radius:20px; padding:24px 30px; width:min(92vw, 440px); box-shadow:0 0 28px rgba(59,130,246,0.25); text-align:center;}
-  .dash-title{color:var(--brand);font-size:2rem;margin:0 0 8px}
-  .dash-user{opacity:.95;margin-bottom:10px}
-  .dash-stats{display:flex;justify-content:center;gap:12px;margin:12px 0 16px}
-  .dash-stat{background:rgba(59,130,246,.08); border:1px solid rgba(59,130,246,.35); border-radius:12px; padding:10px 16px; min-width:92px}
-  .dash-stat .v{color:var(--brand);font-weight:800;font-size:1.1rem}
-  .dash-stat .k{color:var(--muted);font-size:.8rem}
-  .dash-buttons{display:flex;justify-content:center;gap:10px;margin-top:6px}
-  .btn{background:var(--brand);color:#111;border:none;border-radius:14px;padding:12px 20px;font-weight:800;cursor:pointer}
-  .btn[disabled]{opacity:.6;cursor:not-allowed}
-  #status{margin-top:10px; color:var(--muted); min-height:20px}
-
-  #hud{display:none;gap:12px;align-items:center;justify-content:center;padding:10px}
-  .chip{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.35);color:var(--brand);border-radius:999px;padding:8px 12px;font-weight:700}
-  .stage{display:grid;place-items:center;padding:10px 0 18px}
-  canvas{background:#0b1220;display:block;margin:0 auto;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
-  dialog{border:none;border-radius:16px;background:#0b1220;color:#fff;padding:22px;max-width:min(92vw,420px)}
-  dialog::backdrop{background:rgba(0,0,0,.6)}
-  #tests{font:12px/1.2 system-ui; color:#9fb0c3; margin-top:6px}
-</style>
-</head>
-<body>
-<section id="dashboard">
-  <div class="dash-card">
-    <h2 class="dash-title">🔵 BASE BREAKER</h2>
-    <div class="dash-user" id="dashUser">@Player</div>
-    <div class="dash-stats">
-      <div class="dash-stat"><div class="v" id="dashBest">0</div><div class="k">BEST</div></div>
-      <div class="dash-stat"><div class="v" id="dashGames">0</div><div class="k">GAMES</div></div>
-      <div class="dash-stat"><div class="v" id="dashLast">0</div><div class="k">LAST</div></div>
-    </div>
-    <div class="dash-buttons">
-      <button class="btn" id="dashStart">Play (Pay & Start)</button>
-      <button class="btn" id="dashLeaderboard">Leaderboard</button>
-    </div>
-    <div id="status"></div>
-  </div>
-</section>
-<div id="hud">
-  <div class="chip" id="score">Score: 0</div>
-  <div class="chip" id="best">Best: 0</div>
-  <button class="btn" id="pause">Pause</button>
-  <button class="btn" id="showBoard">Leaderboard</button>
-</div>
-<div class="stage">
-  <canvas id="game" width="360" height="640" tabindex="0" aria-label="Base Breaker"></canvas>
-</div>
-<dialog id="over"><h3>Game Over</h3><p id="final">Score: 0</p><div style="display:flex;gap:8px;justify-content:center"><button class="btn" id="again">Play again</button></div></dialog>
-<dialog id="board"><h3>Base Breaker Leaderboard</h3><ol id="boardList" style="text-align:left"></ol><div style="display:flex;gap:8px;justify-content:center;margin-top:10px"><button class="btn" id="closeBoard">Close</button></div></dialog>
 <script>
-// all JS game logic remains identical — localStorage keys changed to baseBest/baseLeaderboard/baseGames/baseLast
-</script>
-</body>
-</html>
+(async () => {
+  // --- Safe status helper ---
+  const statusEl = document.getElementById('status');
+  const say = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
+  // Make sure the dashboard shows even if anything fails early
+  document.getElementById('dashboard')?.style.setProperty('display', 'flex');
+
+  // Try loading the SDK with multiple strategies
+  let sdk = null;
+  try {
+    // Preferred: ESM import
+    const m = await import('https://esm.sh/@farcaster/miniapp-sdk');
+    sdk = m?.sdk ?? null;
+  } catch (e) {
+    console.error('ESM import failed:', e);
+  }
+
+  // Fallback: bundled UMD
+  if (!sdk) {
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://esm.sh/@farcaster/miniapp-sdk?bundle';
+        s.defer = true;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      // Some bundlers attach to window.sdk; if not, skip
+      sdk = window.sdk || null;
+    } catch (e) {
+      console.error('Bundle fallback failed:', e);
+    }
+  }
+
+  if (!sdk) {
+    say('Could not load Farcaster Mini App SDK.');
+    // Let the user play *without* the paywall so the app is never blank
+    // Remove payment gate by wiring Play to start immediately:
+    const btn = document.getElementById('dashStart');
+    if (btn) btn.onclick = () => {
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('hud').style.display = 'flex';
+      window.startLoop?.();
+    };
+    return;
+  }
+
+  // Ready signal (required)
+  try { sdk.actions.ready(); } catch {}
+
+  // ==== Your original wallet + payment wiring (guarded) ====
+
+  const RECIPIENT = '0x8C6e7978ee3324196ea7e478830fF9cD4AD7D507';
+  const AMOUNT_ETH = '0.00001';
+  const USE_BASE_SEPOLIA = false;
+
+  const BASE_MAINNET = {
+    chainId: '0x2105',
+    chainName: 'Base',
+    rpcUrls: ['https://mainnet.base.org'],
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    blockExplorerUrls: ['https://basescan.org']
+  };
+  const BASE_SEPOLIA = {
+    chainId: '0x14a34',
+    chainName: 'Base Sepolia',
+    rpcUrls: ['https://sepolia.base.org'],
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    blockExplorerUrls: ['https://sepolia.basescan.org']
+  };
+  const TARGET = USE_BASE_SEPOLIA ? BASE_SEPOLIA : BASE_MAINNET;
+
+  const dashBest = document.getElementById('dashBest');
+  const dashGames = document.getElementById('dashGames');
+  const dashLast = document.getElementById('dashLast');
+
+  // Player name from Farcaster (optional)
+  window.__PLAYER_NAME__='@Player';
+  window.__WALLET_SHORT__='';
+
+  try {
+    const viewer = await sdk.viewer.getUser();
+    if (viewer?.username) {
+      window.__PLAYER_NAME__ = '@' + viewer.username;
+      const u = document.getElementById('dashUser');
+      if (u) u.textContent = window.__PLAYER_NAME__;
+    }
+  } catch (e) {
+    console.warn('viewer.getUser failed', e);
+  }
+
+  function refreshDashboard(){
+    const best = Number(localStorage.getItem('baseBest')||localStorage.getItem('astroBest')||0);
+    const games = Number(localStorage.getItem('baseGames')||localStorage.getItem('astroGames')||0);
+    const last = Number(localStorage.getItem('baseLast')||localStorage.getItem('astroLast')||0);
+    if (dashBest) dashBest.textContent = best;
+    if (dashGames) dashGames.textContent = games;
+    if (dashLast) dashLast.textContent = last;
+  }
+  refreshDashboard();
+
+  function parseEther(x){
+    const [w,f='']=String(x).split('.');
+    const frac=(f+'0'.repeat(18)).slice(0,18);
+    return '0x'+(BigInt(w)*10n**18n+BigInt(frac)).toString(16);
+  }
+
+  async function getProvider(){
+    try { const p = await sdk.wallet.getEthereumProvider(); if (p) return p; } catch {}
+    return window.ethereum ?? null;
+  }
+
+  async function ensureChain(p, chain){
+    const current = (await p.request({method:'eth_chainId'}))?.toLowerCase();
+    if (current === chain.chainId.toLowerCase()) return;
+    try {
+      await p.request({ method:'wallet_switchEthereumChain', params:[{ chainId: chain.chainId }] });
+    } catch (e) {
+      if (e?.code === 4902) {
+        await p.request({ method:'wallet_addEthereumChain', params:[ chain ] });
+        await p.request({ method:'wallet_switchEthereumChain', params:[{ chainId: chain.chainId }] });
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  async function requiredPayment(){
+    const statusEl = document.getElementById('status');
+    const say = (m) => { if (statusEl) statusEl.textContent = m; };
+    say('Connecting wallet…');
+
+    const provider = await getProvider();
+    if (!provider) { say('No wallet detected.'); throw new Error('NO_PROVIDER'); }
+
+    const [from] = await provider.request({method:'eth_requestAccounts'});
+    window.__WALLET_SHORT__ = from ? `${from.slice(0,6)}…${from.slice(-4)}` : '';
+
+    await ensureChain(provider, TARGET);
+
+    say(`Sending ${AMOUNT_ETH} ETH…`);
+    const hash = await provider.request({
+      method:'eth_sendTransaction',
+      params:[{ from, to:RECIPIENT, value:parseEther(AMOUNT_ETH) }]
+    });
+
+    const explorer = (TARGET.blockExplorerUrls && TARGET.blockExplorerUrls[0]) || '';
+    if (statusEl) statusEl.innerHTML = `TX sent! ${explorer ? `<a target="_blank" href="${explorer}/tx/${hash}">View TX</a>` : ''}`;
+    return hash;
+  }
+
+  function showGame(){
+    document.getElementById('dashboard').style.display='none';
+    document.getElementById('hud').style.display='flex';
+    window.startLoop?.();
+  }
+
+  async function payThenStart(btn){
+    try {
+      btn.disabled = true;
+      await requiredPayment();
+      const overDlg = document.getElementById('over');
+      if (overDlg && overDlg.open) overDlg.close();
+      showGame();
+    } catch (e) {
+      say('Payment cancelled or failed.');
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Wire buttons
+  document.getElementById('dashStart')?.addEventListener('click', (e)=>{
+    e.preventDefault();
+    payThenStart(e.currentTarget);
+  });
+  document.getElementById('dashLeaderboard')?.addEventListener('click', ()=>{
+    window.showLeaderboard?.();
+  });
+})();
+</script>
